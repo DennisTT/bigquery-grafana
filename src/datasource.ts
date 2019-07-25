@@ -172,6 +172,7 @@ export class BigQueryDatasource {
   }
 
   public async query(options) {
+    console.log("query options are: ", options)
     const queries = _.filter(options.targets, target => {
       return target.hide !== true;
     }).map(target => {
