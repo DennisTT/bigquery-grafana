@@ -121,8 +121,10 @@ export default class BigQueryQuery {
     this.interpolateQueryStr = this.interpolateQueryStr.bind(this);
   }
   public getIntervalStr(interval: string, mininterval: string) {
+    console.log("the interval string is: ", interval);
     const res = BigQueryDatasource._getShiftPeriod(interval);
     const groupPeriod = res[0];
+    console.log("group period is: ", interval);
     let IntervalStr =
       "TIMESTAMP_SECONDS(DIV(UNIX_SECONDS(" + this._dateToTimestamp() + "), ";
     let unixSeconds = BigQueryQuery.getUnixSecondsFromString(interval);
