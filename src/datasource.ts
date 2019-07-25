@@ -211,7 +211,7 @@ export class BigQueryDatasource {
       if (query.refId.search(Shifted) > -1) {
         q = this._updateAlias(q, modOptions, query.refId);
       }
-      q += " LIMIT " + options.maxDataPoints;
+      q += " LIMIT 12345";
       console.log(q);
       this.queryModel.target.rawSql = tmpQ;
       return this.doQuery(q, options.panelId + query.refId).then(response => {
