@@ -153,6 +153,7 @@ export class BigQueryDatasource {
     private templateSrv,
     private timeSrv
   ) {
+    console.log("instanceSettings is: ", instanceSettings);
     this.name = instanceSettings.name;
     this.id = instanceSettings.id;
     this.jsonData = instanceSettings.jsonData;
