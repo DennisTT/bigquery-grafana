@@ -40,8 +40,8 @@ export default class BigQueryQuery {
   public static _getInterval(q, alias: boolean) {
     const interval: string[] = [];
     const res = alias
-      ? q.match(/(.*\$__timeGroupAlias\(([\w._]+,)).*?(?=\))/g)
-      : q.match(/(.*\$__timeGroup\(([\w_.]+,)).*?(?=\))/g);
+      ? q.match(/(\$__timeGroupAlias\(([\w._]+,)).*?(?=\))/g)
+      : q.match(/(\$__timeGroup\(([\w_.]+,)).*?(?=\))/g);
     if (res) {
       interval[0] = res[0].split(",")[1];
       interval[1] = res[0].split(",")[2];
@@ -89,6 +89,7 @@ export default class BigQueryQuery {
   public templateSrv: any;
   public scopedVars: any;
   public isWindow: boolean;
+  public isAggregate: boolean;
   public groupBy: string;
   public tmpValue: string;
 
@@ -98,6 +99,7 @@ export default class BigQueryQuery {
     this.templateSrv = templateSrv;
     this.scopedVars = scopedVars;
     this.isWindow = false;
+    this.isAggregate = false;
     this.groupBy = "";
     this.tmpValue = "";
 
@@ -107,7 +109,7 @@ export default class BigQueryQuery {
     target.metricColumn = target.metricColumn || "none";
     target.group = target.group || [];
     target.where = target.where || [
-      { type: "macro", name: "$__timeFilter", params: [] }
+      { type: "macro", name: "$__timeFilter", params: [] },
     ];
     target.select = target.select || [
       [{ type: "column", params: ["-- value --"] }]
@@ -239,7 +241,6 @@ export default class BigQueryQuery {
     for (const column of this.target.select) {
       query += ",\n  " + this.buildValueColumn(column);
     }
-
     return query;
   }
 
@@ -278,6 +279,11 @@ export default class BigQueryQuery {
       column,
       (g: any) => g.type === "window" || g.type === "moving_window"
     );
+    if (aggregate === undefined) {
+      this.isAggregate = false;
+    } else {
+      this.isAggregate = true;
+    }
     const timeshift = _.find(column, (g: any) => g.type === "timeshift");
     query = this._buildAggregate(aggregate, query);
     if (windows) {
@@ -285,10 +291,11 @@ export default class BigQueryQuery {
       const overParts = [];
       const partBy = "PARTITION BY " + this.target.timeColumn;
       if (this.hasMetricColumn()) {
-        overParts.push(partBy + " " + this.target.metricColumn);
+        overParts.push(partBy + "," + this.target.metricColumn);
+      } else {
+        overParts.push(partBy);
       }
-      overParts.push(partBy);
-      overParts.push("ORDER BY " + this.buildTimeColumn(false));
+      overParts.push("ORDER BY " + this.buildTimeColumn(false) );
       const over = overParts.join(" ");
       let curr: string;
       let prev: string;
@@ -373,6 +380,7 @@ export default class BigQueryQuery {
     if (timeshift) {
       query += " $__timeShifting(" + timeshift.params[0] + ")";
     }
+
     return query;
   }
   public buildWhereClause() {
@@ -443,6 +451,9 @@ export default class BigQueryQuery {
           this.groupBy += ",3";
         }
       }
+      if (this.isAggregate === false) {
+        query += ",2";
+      }
     }
     return query;
   }
@@ -455,7 +466,6 @@ export default class BigQueryQuery {
       query += ",\n  " + this.buildMetricColumn();
     }
     query += this.buildValueColumns();
-
     query +=
       "\nFROM " +
       "`" +
@@ -547,7 +557,22 @@ export default class BigQueryQuery {
       from +
       " AND " +
       to;
-    return q.replace(/\$__timeFilter\(([\w_.]+)\)/g, range);
+    const fromRange =
+      BigQueryQuery.quoteFiledName(this.target.timeColumn) +
+      " > " +
+      from +
+      " ";
+    const toRange =
+      BigQueryQuery.quoteFiledName(this.target.timeColumn) +
+      " < " +
+      to +
+      " ";
+    q = q.replace(/\$__timeFilter\(([\w_.]+)\)/g, range);
+    q = q.replace(/\$__timeFrom\(([\w_.]+)\)/g, fromRange);
+    q = q.replace(/\$__timeTo\(([\w_.]+)\)/g, toRange);
+    q = q.replace(/\$__millisTimeTo\(([\w_.]+)\)/g, to);
+    q = q.replace(/\$__millisTimeFrom\(([\w_.]+)\)/g, from);
+    return q;
   }
 
   public replacetimeGroupAlias(q, alias: boolean) {
@@ -557,7 +582,6 @@ export default class BigQueryQuery {
     if (!interval) {
       return q;
     }
-
     const intervalStr = this.getIntervalStr(interval, mininterval);
     if (alias) {
       return q.replace(
@@ -567,7 +591,7 @@ export default class BigQueryQuery {
     } else {
       return q.replace(
         /\$__timeGroup\(([\w_.]+,+[a-zA-Z0-9_ ]+.*\))/g,
-        intervalStr
+        intervalStr + ")"
       );
     }
   }

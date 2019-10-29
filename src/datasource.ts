@@ -144,6 +144,7 @@ export class BigQueryDatasource {
   private interval: string;
   private readonly baseUrl: string;
   private readonly url: string;
+  private mixpanel;
 
   /** @ngInject */
   constructor(
@@ -169,6 +170,11 @@ export class BigQueryDatasource {
         instanceSettings.jsonData.defaultProject ||
         (await this.getDefaultProject());
     })();
+    this.mixpanel = require("mixpanel-browser");
+    if (this.jsonData.sendUsageData !== false) {
+      this.mixpanel.init("86fa5c838013959cc6867dc884958f7e");
+      this.mixpanel.track("datasource.create");
+    }
   }
 
   public async query(options) {
@@ -187,8 +193,15 @@ export class BigQueryDatasource {
         format: target.format,
         intervalMs: options.intervalMs,
         maxDataPoints: options.maxDataPoints,
+        metricColumn: target.metricColumn,
+        partitioned: target.partitioned,
+        partitionedField: target.partitionedField,
         rawSql: queryModel.render(this.interpolateVariable),
-        refId: target.refId
+        refId: target.refId,
+        sharded: target.sharded,
+        table: target.table,
+        timeColumn: target.timeColumn,
+        timeColumnType: target.timeColumnType
       };
     });
 
@@ -203,7 +216,14 @@ export class BigQueryDatasource {
     });
     const allQueryPromise = _.map(queries, query => {
       const tmpQ = this.queryModel.target.rawSql;
+      this.queryModel.target.metricColumn = query.metricColumn;
+      this.queryModel.target.partitioned = query.partitioned;
+      this.queryModel.target.partitionedField = query.partitionedField;
       this.queryModel.target.rawSql = query.rawSql;
+      this.queryModel.target.sharded = query.sharded;
+      this.queryModel.target.table = query.table;
+      this.queryModel.target.timeColumn = query.timeColumn;
+      this.queryModel.target.timeColumnType = query.timeColumnType;
       const modOptions = BigQueryDatasource._setupTimeShiftQuery(
         query,
         options
@@ -213,7 +233,11 @@ export class BigQueryDatasource {
       if (query.refId.search(Shifted) > -1) {
         q = this._updateAlias(q, modOptions, query.refId);
       }
-      q += " LIMIT " + options.maxDataPoints;
+      console.log(q)
+      const limit = q.match(/[^]+(\bLIMIT\b)/gi);
+      if (limit == null) {
+        q += " LIMIT " + options.maxDataPoints;
+      }
       console.log(q);
       this.queryModel.target.rawSql = tmpQ;
       return this.doQuery(q, options.panelId + query.refId).then(response => {
@@ -222,7 +246,7 @@ export class BigQueryDatasource {
     });
     return this.$q.all(allQueryPromise).then(
       (responses): any => {
-        const data = [];
+      const data = [];
         for (const response of responses) {
           if (response.type && response.type === "table") {
             data.push(response);
@@ -308,6 +332,9 @@ export class BigQueryDatasource {
       if (error.status !== 404) {
         message = error.statusText ? error.statusText : defaultErrorMessage;
       }
+    }
+    if (this.jsonData.sendUsageData !== false) {
+      this.mixpanel.track("datasource.save");
     }
     return {
       message,
@@ -452,6 +479,9 @@ export class BigQueryDatasource {
       .catch(error => {
         if (maxRetries > 0) {
           return this.doQueryRequest(query, requestId, maxRetries - 1);
+        }
+        if (error.cancelled === true) {
+          return [];
         }
         return BigQueryDatasource._handleError(error);
       });
